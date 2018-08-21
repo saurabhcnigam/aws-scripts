@@ -1,15 +1,16 @@
 import boto3
 import openpyxl
+import openpyxl.styles
 
 ## Instantiate New Excel workbook
 exl_wb = openpyxl.Workbook()
 def exl_save():
-    exl_wb.save('AWS.xlsx')
+    exl_wb.save('BHGE AWS1.xlsx')
 def print_service_header(service, region):
     print("\t\tFetching ",service, " security groups in region : ", region)
 ########################################################################################################################
 
-allSGAttributes = ['RegionName', 'SecurityGroupId', 'SecurityGroupName', 'SecurityGroupDescription', 'VpcId', 'Inbound-FromPort', 'Inbound-ToPort', 'Inbound-Protocol', 'ServiceMappedTo']
+allSGAttributes = ['RegionName', 'SecurityGroupId', 'SecurityGroupName', 'SecurityGroupDescription', 'VpcId',  'Protocol', 'Ports', 'IpRanges', 'UserIdGroupPairs','ServiceMappedTo']
 numberOfAllSGAttributes = len(allSGAttributes)
 allSGList = []
 ## Create a sheet for All security groups
@@ -30,6 +31,7 @@ for s_col in range(1, numberOfELBSGAttributes+1):
     exl_s1_elb.cell(row=1,column=s_col).value = elbSGAttributes[s_col-1]
 
 ########################################################################################################################
+## Attributes of RDS DB Instance - DBInstanceID, DBName, DBPort, DBEngine, VPCSecurityGroupID, AvailabilityZone, DBSubnetGroupName, VpcId, SubnetID
 
 rdsSGAttributes = ['RegionName','DBInstanceID','DBName','DBPort','DBEngine','VPCSecurityGroupID','AvailabilityZone','DBSubnetGroupName','VpcId','SubnetID']
 numberOfRDSSGAttributes = len(rdsSGAttributes)
@@ -41,6 +43,7 @@ for s_col in range(1, numberOfRDSSGAttributes+1):
     exl_s2_rds.cell(row=1,column=s_col).value = rdsSGAttributes[s_col-1]
 
 ########################################################################################################################
+    ## Attributes of Elasticache Cluster - CacheClusterId CacheNodeType Engine AvailabilityZone CacheSubnetGroupName SecurityGroupId
 
 elastiCacheSGAttributes = ['RegionName','CacheClusterId', 'CacheNodeType','CacheEngine','AvailabilityZone','CacheSubnetGroupName', 'SecurityGroupId']
 numberOfElastiCacheSGAttributes = len(elastiCacheSGAttributes)
@@ -52,31 +55,38 @@ for s_col in range(1, numberOfElastiCacheSGAttributes+1):
     exl_s3_ec.cell(row=1,column=s_col).value = elastiCacheSGAttributes[s_col-1]
 
 ########################################################################################################################
-
+    ## Attributes of RedShift -
 redshiftSGAttributes = []
 numberOfRedShiftSGAttributes = len(redshiftSGAttributes)
 redshiftSGList= []
-
 ########################################################################################################################
 def serviceMapper(sgid):
+    srvcDict = {'ELB': '0', 'RDS':'0', 'ELASTICACHE':'0'}
+    srvc = ""
     for i in range(0,len(elbSGList)):
         tmp = elbSGList[i][elbSGAttributes[5]].split(",")
         for j in range(0,len(tmp)):
             if str(tmp[j]) == str(sgid):
-                return "ELB"
+                srvcDict['ELB'] = '1'
     for i in range(0, len(rdsSGList)):
         tmp = rdsSGList[i][rdsSGAttributes[5]].split(",")
         for j in range(0,len(tmp)):
             if str(tmp[j]) == str(sgid):
-                return "RDS"
+                srvcDict['RDS'] = '1'
     for i in range(0, len(elastiCacheSGList)):
         tmp = elastiCacheSGList[i][elastiCacheSGAttributes[6]].split(",")
         for j in range(0,len(tmp)):
             if str(tmp[j]) == str(sgid):
-                return "ElasticCache"
-    return ""
+                srvcDict['ELASTICACHE'] = '1'
+    if srvcDict['ELB'] == '1':
+        srvc = srvc + "ELB "
+    if srvcDict['RDS'] == '1':
+        srvc = srvc + "RDS "
+    if srvcDict['ELASTICACHE'] == '1':
+        srvc = srvc + "ELASTICACHE "
+    return srvc
 ########################################################################################################################
-
+## ['RegionName', 'SecurityGroupId', 'SecurityGroupName', 'SecurityGroupDescription', 'VpcId',  'Protocol', 'Ports', 'IpRanges', 'UserIdGroupPairs','ServiceMappedTo']
 def processAllSecurityGroupsInRegion(region_name):
     debug_allSGfile = open("debug-allSG.txt", "a")
     print_service_header("All",region_name)
@@ -90,35 +100,59 @@ def processAllSecurityGroupsInRegion(region_name):
         allGroupsDict[allSGAttributes[5]] = ""
         allGroupsDict[allSGAttributes[6]] = ""
         allGroupsDict[allSGAttributes[7]] = ""
+        allGroupsDict[allSGAttributes[8]] = ""
+        allGroupsDict[allSGAttributes[9]] = serviceMapper(allGroupsDict[allSGAttributes[1]])
         noofrules = len(sg['IpPermissions'])
         for ruleno in range(noofrules):
             rule = sg['IpPermissions'][ruleno]
-            try:
-                if rule['FromPort'] == "-1":
-                    allGroupsDict[allSGAttributes[5]] = "All port"
-                else:
-                    allGroupsDict[allSGAttributes[5]] = str(rule['FromPort'])
-            except Exception:
-                pass
-            try:
-                if rule['ToPort'] == "-1":
-                    allGroupsDict[allSGAttributes[6]] = "All port"
-                else:
-                    allGroupsDict[allSGAttributes[6]] = str(rule['ToPort'])
-            except Exception:
-                pass
+
             try:
                 if rule['IpProtocol'] == "-1":
-                    allGroupsDict[allSGAttributes[7]] = "All"
+                    allGroupsDict[allSGAttributes[5]] = "All"
                 else:
-                    allGroupsDict[allSGAttributes[7]] = str(rule['IpProtocol'])
+                    allGroupsDict[allSGAttributes[5]] = str(rule['IpProtocol'])
             except Exception:
-                pass
-        allGroupsDict[allSGAttributes[8]] = serviceMapper(allGroupsDict[allSGAttributes[1]])
+                print("Exception occurred: All Security Groups [",sg['GroupId'],"] - Key IpProtocol Missing")
+
+            try:
+                if rule['FromPort'] == "-1":
+                    allGroupsDict[allSGAttributes[6]] = "From: All "
+                else:
+                    allGroupsDict[allSGAttributes[6]] = "From: " + str(rule['FromPort']) + " "
+            except Exception:
+                print("Exception occurred: All Security Groups [",sg['GroupId'],"] - Key FromPort Missing")
+
+            try:
+                if rule['ToPort'] == "-1":
+                    allGroupsDict[allSGAttributes[6]] = allGroupsDict[allSGAttributes[6]] + "To: All"
+                else:
+                    allGroupsDict[allSGAttributes[6]] = allGroupsDict[allSGAttributes[6]] + "To: " + str(rule['ToPort']) + " "
+            except Exception:
+                print("Exception occurred: All Security Groups [",sg['GroupId'],"] - Key ToPort Missing")
+
+            try:
+                noofipranges = len(rule['IpRanges'])
+                for iprangeno in range(noofipranges):
+                    allGroupsDict[allSGAttributes[7]] = allGroupsDict[allSGAttributes[7]] + str(rule['IpRanges'][iprangeno]['CidrIp'])
+                    if iprangeno != noofipranges-1:
+                        allGroupsDict[allSGAttributes[7]] = allGroupsDict[allSGAttributes[7]] + ",\n "
+            except Exception:
+                print("Exception occurred: All Security Groups [",sg['GroupId'],"] - Key IpRanges Missing")
+
+            try:
+                noofuidgrppairs = len(rule['UserIdGroupPairs'])
+                sg_tmp_8 = ""
+                for ugpairsno in range(noofuidgrppairs):
+                    sg_tmp_8 = sg_tmp_8 + str(rule['UserIdGroupPairs'][ugpairsno]['GroupId'])
+                ## Below line is for formatting, do not edit this
+                allGroupsDict[allSGAttributes[8]] = sg_tmp_8[0:2] + sg_tmp_8[2:].replace("sg-",", sg-")
+            except Exception:
+                print("Exception occurred: All Security Groups [",sg['GroupId'],"] - Key UserIdGroupPairs Missing")
+
         ## Append dictionary to list for later processing
         allSGList.append(allGroupsDict)
         ## Write dictionary to debug file
-        debug_allSGfile.write(str(allGroupsDict))
+        debug_allSGfile.write(str(sg))
         debug_allSGfile.write("\n")
 
     ## Number of all SG records found in this region
@@ -129,6 +163,8 @@ def processAllSecurityGroupsInRegion(region_name):
     for s_row in range(rowsInsheet+1, numberOfRecords_allSG+2):
         ## From col=1 to col=total_no_of_attributes
         for s_col in range(1, numberOfAllSGAttributes+1):
+            # if s_col == 3 or s_col == 4 or s_col == 8 or s_col == 9:
+            #     exl_s0_asg.cell(row=s_row,column=s_col).alignment = openpyxl.styles.Alignment(wrap_text=True)
             ## fetch s_row-2 record's allSGAttributes[s_col-1] attribute
             exl_s0_asg.cell(row=s_row,column=s_col).value = allSGList[s_row-2][allSGAttributes[s_col-1]]
             # print("with data: ", allSGList[s_row-2][allSGAttributes[s_col-1]])
@@ -177,7 +213,7 @@ def processELBSecurityGroupsInRegion(region_name):
         elbGroupsDict[elbSGAttributes[7]] = elb['VPCId']
         elbSGList.append(elbGroupsDict)
         ## Write dictionary to debug file
-        debug_elbSGfile.write(str(elbGroupsDict))
+        debug_elbSGfile.write(str(elb))
         debug_elbSGfile.write("\n")
 
     ## Number of ELB records found in this region
@@ -220,7 +256,7 @@ def processRDSSecurityGroupsInRegion(region_name):
                 rdsDbInstanceSGDict[rdsSGAttributes[9]]=rdsDbInstanceSGDict[rdsSGAttributes[9]]+","
         rdsSGList.append(rdsDbInstanceSGDict)
         ## Write dictionary to debug file
-        debug_rdsSGfile.write(str(rdsDbInstanceSGDict))
+        debug_rdsSGfile.write(str(rds_db_instance))
         debug_rdsSGfile.write("\n")
 
     ## Number of RDS records found in this region
@@ -258,7 +294,7 @@ def processElastiCacheSecurityGroupsInRegion(region_name):
                 cacheGroupsDict[elastiCacheSGAttributes[6]]=cacheGroupsDict[elastiCacheSGAttributes[6]]+","
         elastiCacheSGList.append(cacheGroupsDict)
         ## Write dictionary to debug file
-        debug_ElastiCacheSGfile.write(str(cacheGroupsDict))
+        debug_ElastiCacheSGfile.write(str(cache))
         debug_ElastiCacheSGfile.write("\n")
 
     ## Number of RDS records found in this region
@@ -286,6 +322,7 @@ def main():
     print("About Script: This script will fetch security groups related details from AWS.\n")
     ## Fetch all the region names
     region_names = [x['RegionName'] for x in boto3.client('ec2').describe_regions()['Regions']]
+    #region_names = ['us-west-2']
     print("Number of Regions found: ", len(region_names))
 
     for region_name in region_names:
